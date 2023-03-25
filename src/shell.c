@@ -14,7 +14,8 @@ int parseInput(char ui[]);
 //*argv contains the string ./mysh 
 int main(int argc, char *argv[]) {
 	printf("%s\n", "Shell version 1.2 Created January 2023 \n");
-	//help();
+	help();     //Comment this out when running batch mode
+    
 
 	char prompt = '$';  				// Shell prompt
 	char userInput[MAX_USER_INPUT];		// user's input stored here
