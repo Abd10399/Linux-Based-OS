@@ -2,20 +2,22 @@
 #include <stdlib.h>
 #include <string.h> 
 #include <unistd.h>
-
+#include <dirent.h>
+#include <errno.h>
 #include "interpreter.h"
 #include "shellmemory.h"
+#include "pcb.h"
+#include "kernel.h"
+#include "shell.h"
 
 int MAX_USER_INPUT = 1000;
 int parseInput(char ui[]);
 
-
-// Start of everything
-//*argv contains the string ./mysh 
 int main(int argc, char *argv[]) {
-	printf("%s\n", "Shell version 1.2 Created January 2023 \n");
-	help();     //Comment this out when running batch mode
-    
+	printf("%s\n", "Shell version 1.2 Created January 2023\n");
+    //extra printout for frame store size and variable store size
+    //TODO
+    printf("Frame Store Size = %d; Variable Store Size = %d\n", FRAME_STORE_SIZE, VAR_STORE_SIZE);
 
 	char prompt = '$';  				// Shell prompt
 	char userInput[MAX_USER_INPUT];		// user's input stored here
@@ -27,23 +29,52 @@ int main(int argc, char *argv[]) {
 	
 	//init shell memory
 	mem_init();
-    //isatty(0) returns 1 if we are in interactive, returns 0 otherwise
+    
+    //initialize backing store
+    frame_mem_init();
+    //check if already exists
+    DIR* dir = opendir("backingstore");
+    if (dir) {
+    /* Directory exists. Need to remove it and its contents*/
+
+        char* command = (char*) calloc(1, strlen("backingstore")+7); 
+        strncat(command, "rm -r ", 7);
+        strncat(command, "backingstore", strlen("backingstore")+1);
+        int errCode = system(command);
+        free(command);
+        closedir(dir);
+    } 
+    
+    //create backingstore
+    char* command = (char*) calloc(1, 7+strlen("backingstore")); 
+	strncat(command, "mkdir ", 7);
+	strncat(command, "backingstore", strlen("backingstore")+1);
+	int errCode = system(command);
+	free(command);
+
+    
+
 
 	while(1) {						
         if (isatty(fileno(stdin))) printf("%c ",prompt);
-		fgets(userInput, MAX_USER_INPUT-1, stdin);
-		if (feof(stdin)){
-			freopen("/dev/tty", "r", stdin);
-		}	
-		errorCode = parseInput(userInput);
-		if (errorCode == -1) exit(99);	// ignore all other errors
-		memset(userInput, 0, sizeof(userInput));
+
+		char *str = fgets(userInput, MAX_USER_INPUT-1, stdin);
+        if (feof(stdin)){
+            freopen("/dev/tty", "r", stdin);
+        }
+
+		if(strlen(userInput) > 0) {
+            errorCode = parseInput(userInput);
+            if (errorCode == -1) exit(99);	// ignore all other errors
+            memset(userInput, 0, sizeof(userInput));
+		}
 	}
+
 	return 0;
 
 }
 
-int parseInput(char ui[]) {
+int parseInput(char *ui) {
     char tmp[200];
     char *words[100];                            
     int a = 0;
@@ -51,29 +82,26 @@ int parseInput(char ui[]) {
     int w=0; // wordID    
     int errorCode;
     for(a=0; ui[a]==' ' && a<1000; a++);        // skip white spaces
-    while(ui[a] != '\n' && ui[a] != '\0' && a<1000) {
-        for(b=0; ui[a]!=';' && ui[a]!='\0' && ui[a]!='\n' && ui[a]!=' ' && a<1000; a++, b++){
-            tmp[b] = ui[a];                        
-            // extract a word 
-        }
-        tmp[b] = '\0';
-        words[w] = strdup(tmp);
-        w++;
+    
+    while(ui[a] != '\n' && ui[a] != '\0' && a<1000 && a<strlen(ui)) {
+        while(ui[a]==' ') a++;
         if(ui[a] == '\0') break;
-        if (ui[a] == ';') {
-            errorCode = interpreter(words, w); //Calls the interpreter when it finds the command to be completed
-            //Resetting the variables
-            strcpy(tmp,"");
-            for (;w>0;w--) {    //Resets the words array to empty strings, and w to 0
-                words[w-1] =strdup(tmp);
-            }
+        for(b=0; ui[a]!=';' && ui[a]!='\0' && ui[a]!='\n' && ui[a]!=' ' && a<1000; a++, b++) tmp[b] = ui[a];
+        tmp[b] = '\0';
+        if(strlen(tmp)==0) continue;
+        words[w] = strdup(tmp);
+        if(ui[a]==';'){
+            w++;
+            errorCode = interpreter(words, w);
+            if(errorCode == -1) return errorCode;
             a++;
-            for(; ui[a]==' ' && a<1000; a++);        // skip white spaces, goes to the next command directly
-        } else {
-            a++;
-        } 
+            w = 0;
+            for(; ui[a]==' ' && a<1000; a++);        // skip white spaces
+            continue;
+        }
+        w++;
+        a++; 
     }
     errorCode = interpreter(words, w);
     return errorCode;
 }
-
